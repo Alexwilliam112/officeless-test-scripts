@@ -1,4 +1,4 @@
-const results = require("../result_log.json");
+const results = require("../logs/result_log.json");
 
 const successData = results.filter(
   (result) => result.result === "PASS"

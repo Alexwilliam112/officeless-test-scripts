@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "jest --detectOpenHandles --forceExit && node ./tests/reporter.js"
+    "test": "jest --detectOpenHandles --forceExit && node ./tests/reporter.js",
+    "scenario": "node ./tests/scenarios.js",
+    "logs": "node ./tests/viewLogs.js"
   },
   "keywords": [],
   "author": "",

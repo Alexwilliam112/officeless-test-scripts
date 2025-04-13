@@ -1,137 +1,173 @@
 require("dotenv").config();
 const request = require("supertest");
 const fs = require("fs");
+const path = require("path");
 const app = process.env.BASE_URL;
 const authToken = process.env.AUTH_TOKEN;
 
-const testData = require("../scripts/units/unit.template.json");
+const unitPath = path.join(__dirname, "../scripts/units");
+
+// Function to load all JSON files in the /units directory
+function loadTestData(directory) {
+  return fs
+    .readdirSync(directory)
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => {
+      const filePath = path.join(directory, file);
+      const content = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      return { file, content }; // Return file name and content
+    });
+}
+
+const testFiles = loadTestData(unitPath);
 
 describe("Dynamic API Tests with Cleanup", () => {
-  const cleanupIds = []; // Array to store IDs for cleanup
-  const resultLog = []; // Array to store test results
+  const resultLog = [];
+  const runLog = [];
 
-  testData.forEach((testGroup) => {
-    describe(testGroup.name, () => {
-      testGroup.scenarios.forEach((scenario) => {
-        test(`Case ${scenario.case_no}: ${testGroup.path}`, async () => {
-          const startTime = Date.now(); // Start time for runtime calculation
-          let result = "PASS"; // Default result
+  testFiles.forEach(({ file, content }) => {
+    describe(`Tests for file: ${file}`, () => {
+      const cleanupIds = []; // Reset cleanup IDs for each file
 
-          try {
-            const response = await request(app)
-              .post(testGroup.path)
-              .set("Authorization", `Bearer ${authToken}`)
-              .send(scenario.payload);
+      content.forEach((testGroup) => {
+        describe(testGroup.name, () => {
+          testGroup.scenarios.forEach((scenario) => {
+            test(`Case ${scenario.case_no}: ${testGroup.path}`, async () => {
+              const startTime = Date.now();
+              let result = "PASS";
 
-            console.log("==========================");
-            console.log("Response Body:", response.body);
+              try {
+                const response = await request(app)
+                  .post(testGroup.path)
+                  .set("Authorization", `Bearer ${authToken}`)
+                  .send(scenario.payload);
 
-            // Validate response properties
-            expect(response.body).toHaveProperty("data");
-            expect(response.body).toHaveProperty("error");
-            expect(response.body).toHaveProperty("is_valid");
-            expect(response.body).toHaveProperty("message");
+                console.log("==========================");
+                console.log("Response Body:", response.body);
+                runLog.push({
+                  file,
+                  case_no: scenario.case_no,
+                  description: scenario.description,
+                  path: testGroup.path,
+                  method: "POST",
+                  name: testGroup.name,
+                  responseBody: response.body,
+                });
 
-            // Compare specific values
-            expect(response.body.error).toBe(scenario.output_structure.error);
-            expect(response.body.is_valid).toBe(
-              scenario.output_structure.is_valid
-            );
-            expect(response.body.message).toBe(
-              scenario.output_structure.message
-            );
+                expect(response.body).toHaveProperty("data");
+                expect(response.body).toHaveProperty("error");
+                expect(response.body).toHaveProperty("is_valid");
+                expect(response.body).toHaveProperty("message");
 
-            // Store IDs for cleanup
-            if (response.body.data && response.body.data.data.id) {
-              cleanupIds.push({
-                id: response.body.data.data.id,
-                form_data_id: scenario.payload.form_data_id,
-                form_ui_id: scenario.payload.form_ui_id,
-              });
-              console.log("Added to cleanupIds:", cleanupIds); // Log the current state of cleanupIds
-            } else {
-              console.warn(
-                "No ID found in response for cleanup:",
-                response.body
-              );
-            }
-          } catch (error) {
-            console.error("Test failed:", error.message);
-            result = "FAILED"; // Mark the test as failed
-          } finally {
-            const endTime = Date.now(); // End time for runtime calculation
-            const runtime = endTime - startTime; // Calculate runtime
+                expect(response.body.error).toBe(
+                  scenario.output_structure.error
+                );
+                expect(response.body.is_valid).toBe(
+                  scenario.output_structure.is_valid
+                );
+                expect(response.body.message).toBe(
+                  scenario.output_structure.message
+                );
 
-            // Log the result
-            resultLog.push({
-              path: testGroup.path,
-              method: "POST",
-              name: testGroup.name,
-              case_no: scenario.case_no,
-              description: scenario.description,
-              runtime,
-              result,
+                if (response.body.data && response.body.data.data.id) {
+                  cleanupIds.push({
+                    id: response.body.data.data.id,
+                    form_data_id: scenario.payload.form_data_id,
+                    form_ui_id: scenario.payload.form_ui_id,
+                  });
+                  console.log("Added to cleanupIds:", cleanupIds);
+                } else {
+                  console.warn(
+                    "No ID found in response for cleanup:",
+                    response.body
+                  );
+                }
+              } catch (error) {
+                console.error("Test failed:", error.message);
+                result = "FAILED";
+              } finally {
+                const endTime = Date.now();
+                const runtime = endTime - startTime;
+
+                resultLog.push({
+                  file,
+                  path: testGroup.path,
+                  method: "POST",
+                  name: testGroup.name,
+                  case_no: scenario.case_no,
+                  description: scenario.description,
+                  runtime,
+                  result,
+                });
+              }
             });
-          }
+          });
         });
+      });
+
+      afterAll(async () => {
+        console.log(`Cleanup for file: ${file}`);
+        const cleanupLog = [];
+
+        for (const cleanupId of cleanupIds) {
+          try {
+            const cleanupResponse = await request(app)
+              .delete("/delete")
+              .set("Authorization", `Bearer ${authToken}`)
+              .query({
+                id: cleanupId.id,
+                form_data_id: cleanupId.form_data_id,
+                form_ui_id: cleanupId.form_ui_id,
+              });
+
+            cleanupLog.push({
+              cleanupId,
+              status: cleanupResponse.status,
+              body: cleanupResponse.body,
+            });
+
+            expect(cleanupResponse.status).toBe(200);
+            expect(cleanupResponse.body).toHaveProperty(
+              "message",
+              "Deleted successfully"
+            );
+
+            console.log("===========================");
+            console.log("Cleanup Response Body:", cleanupResponse.body);
+          } catch (error) {
+            cleanupLog.push({
+              cleanupId,
+              error: error.message,
+            });
+            console.error("Cleanup failed for:", cleanupId, error.message);
+          }
+        }
+
+        fs.writeFileSync(
+          `./logs/cleanup-log-${file}.json`,
+          JSON.stringify(cleanupLog, null, 2),
+          "utf-8"
+        );
+
+        console.log(`Cleanup log written for file: ${file}`);
       });
     });
   });
 
-  afterAll(async () => {
-    console.log("Cleanup IDs before cleanup:", cleanupIds); // Log cleanupIds before cleanup starts
-    const cleanupLog = []; // Array to store cleanup logs
-
-    for (const cleanupId of cleanupIds) {
-      try {
-        const cleanupResponse = await request(app)
-          .delete("/delete")
-          .set("Authorization", `Bearer ${authToken}`)
-          .query({
-            id: cleanupId.id,
-            form_data_id: cleanupId.form_data_id,
-            form_ui_id: cleanupId.form_ui_id,
-          });
-
-        cleanupLog.push({
-          cleanupId,
-          status: cleanupResponse.status,
-          body: cleanupResponse.body,
-        });
-
-        expect(cleanupResponse.status).toBe(200);
-        expect(cleanupResponse.body).toHaveProperty(
-          "message",
-          "Deleted successfully"
-        );
-
-        console.log("===========================");
-        console.log("Cleanup Response Body:", cleanupResponse.body);
-      } catch (error) {
-        cleanupLog.push({
-          cleanupId,
-          error: error.message,
-        });
-        console.error("Cleanup failed for:", cleanupId, error.message);
-      }
-    }
-
-    // Write the cleanup log to a JSON file
+  afterAll(() => {
     fs.writeFileSync(
-      "./cleanup-log.json",
-      JSON.stringify(cleanupLog, null, 2),
+      "./logs/run_log.json",
+      JSON.stringify(runLog, null, 2),
       "utf-8"
     );
 
-    console.log("Cleanup log written to cleanup-log.json");
-
-    // Write the result log to a JSON file
     fs.writeFileSync(
-      "./result_log.json",
+      "./logs/result_log.json",
       JSON.stringify(resultLog, null, 2),
       "utf-8"
     );
 
-    console.log("Result log written to result_log.json");
+    console.log("Run logs written to run_log.json");
+    console.log("Result logs written to result_log.json");
   });
 });
