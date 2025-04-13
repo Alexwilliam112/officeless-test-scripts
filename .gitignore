@@ -1,4 +1,4 @@
 node_modules
 .env
-cleanup-log.json
-result_log.json
+/logs/*
+!/logs/.gitkeep

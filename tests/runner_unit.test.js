@@ -19,7 +19,11 @@ function loadTestData(directory) {
 
 const testFiles = loadTestData(unitPath);
 
-describe("Dynamic API Tests with Cleanup", () => {
+test("Placeholder test to ensure Jest detects the suite", () => {
+  expect(true).toBe(true);
+});
+
+describe("Executing Unit Test", () => {
   const resultLog = [];
   const runLog = [];
 
