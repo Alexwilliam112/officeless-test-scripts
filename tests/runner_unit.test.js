@@ -4,10 +4,8 @@ const fs = require("fs");
 const path = require("path");
 const app = process.env.BASE_URL;
 const authToken = process.env.AUTH_TOKEN;
-
 const unitPath = path.join(__dirname, "../scripts/units");
 
-// Function to load all JSON files in the /units directory
 function loadTestData(directory) {
   return fs
     .readdirSync(directory)
@@ -15,7 +13,7 @@ function loadTestData(directory) {
     .map((file) => {
       const filePath = path.join(directory, file);
       const content = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-      return { file, content }; // Return file name and content
+      return { file, content };
     });
 }
 
@@ -27,7 +25,7 @@ describe("Dynamic API Tests with Cleanup", () => {
 
   testFiles.forEach(({ file, content }) => {
     describe(`Tests for file: ${file}`, () => {
-      const cleanupIds = []; // Reset cleanup IDs for each file
+      const cleanupIds = [];
 
       content.forEach((testGroup) => {
         describe(testGroup.name, () => {
